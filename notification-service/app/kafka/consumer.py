@@ -14,8 +14,12 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+# client = AsyncIOMotorClient(settings.MONGO_URL)
+# notification_collection = client.notifications.notifications
+
 client = AsyncIOMotorClient(settings.MONGO_URL)
-notification_collection = client.notifications.notifications
+db = client[settings.DATABASE_NAME]
+notification_collection = db["notifications"]
 
 consumer_task = None
 consumer_instance = None
@@ -31,15 +35,21 @@ async def consume_notifications():
     )
     await consumer_instance.start()
     print("Kafka consumer started")
+    print("Mongo URL:", settings.MONGO_URL)
+    print("Database:", settings.DATABASE_NAME)
     logger.info("Kafka consumer started")
 
     try:
         async for msg in consumer_instance:
             print("Kafka message received:", msg.value.decode()) 
             logger.debug(f"Kafka message received: {msg.value.decode()}")
-
-            data = json.loads(msg.value.decode())
-            #print(data)
+            
+            try:
+                data = json.loads(msg.value.decode())
+            except json.JSONDecodeError:
+                logger.error("Invalid JSON received from Kafka")
+                continue
+            
             # BROADCAST TO WEBSOCKET CLIENTS
             if manager.active_connections:
                 print("📡 Broadcasting to", len(manager.active_connections), "clients")
