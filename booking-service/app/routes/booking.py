@@ -64,6 +64,7 @@ def list_bookings(
 
     return bookings
 # -----------------------
+
 # Create booking
 # -----------------------
 
