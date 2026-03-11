@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-Time Booking List</title>
+    <!-- Bootstrap 5 CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        .card-custom {
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .status-badge {
+            font-size: 14px;
+            padding: 6px 12px;
+            border-radius: 20px;
+        }
+
+        .table thead {
+            background-color: #343a40;
+            color: white;
+        }
+        .current-meeting td {
+    background-color: #28a745 !important;
+    color: white;
+}
+
+.upcoming-meeting td {
+    background-color: #ffc107 !important;
+    color: black;
+}
+
+.cancelled-meeting td {
+    background-color: #dc3545 !important;
+    color: white;
+}
+.past-meeting td {
+    background-color: #f8d7da !important;
+    color: black;
+}
+
+    </style>
+</head>
+<body>
+<div class="container py-5">
+    <div class="card card-custom">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <h4 class="mb-0">📅 Real-Time Room Bookings</h4>
+            <span id="status" class="badge bg-danger status-badge">Disconnected</span>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle text-center">
+                    <thead>
+                        <tr>
+                            <th>Booking ID</th>
+                            <th>Email</th>
+                            <th>Room No</th>
+                            <th>Date</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bookingTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const ws = new WebSocket("ws://localhost:8004/ws/notifications");
+const statusBadge = document.getElementById("status");
+const table = document.getElementById("bookingTable");
+
+// Format time for display
+function formatTime(timeString) {
+    const cleanTime = timeString.split(".")[0]; // remove milliseconds
+    const date = new Date(`1970-01-01T${cleanTime}`);
+    return date.toLocaleTimeString("en-US", {hour: "numeric", minute: "2-digit", hour12: true});
+}
+
+// Format date for display
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-GB", {day: "2-digit", month: "short", year: "numeric"});
+}
+
+// Determine status
+function getMeetingStatus(bookingDate, startTime, endTime) {
+    const now = new Date();
+    const start = new Date(`${bookingDate}T${startTime.split(".")[0]}`);
+    const end = new Date(`${bookingDate}T${endTime.split(".")[0]}`);
+
+    if (now >= start && now <= end) return "current";
+    else if (now < start) return "upcoming";
+    else return "past";
+}
+
+// WebSocket events
+ws.onopen = () => {
+    statusBadge.classList.replace("bg-danger", "bg-success");
+    statusBadge.innerText = "🟢 Connected";
+    console.log("Connected");
+
+};
+
+ws.onclose = () => {
+    statusBadge.classList.replace("bg-success", "bg-danger");
+    statusBadge.innerText = "🔴 Disconnected";
+    console.log("Disconnected");
+
+};
+
+// Add booking row
+ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type !== "new_booking") return;
+
+    const booking = message.data;
+    const row = document.createElement("tr");
+
+    // Save raw start/end times in data attributes for reliable comparison
+    row.setAttribute("data-start", booking.start_time);
+    row.setAttribute("data-end", booking.end_time);
+    row.setAttribute("data-date", booking.date);
+
+    const status = getMeetingStatus(booking.date, booking.start_time, booking.end_time);
+    row.classList.add(status === "current" ? "current-meeting" : status === "upcoming" ? "upcoming-meeting" : "past-meeting");
+
+    row.innerHTML = `
+        <td><span class="badge bg-primary">${booking.booking_id}</span></td>
+        <td>${booking.user_email}</td>
+        <td><span class="badge bg-info text-dark">${booking.room_id}</span></td>
+        <td>${formatDate(booking.date)}</td>
+        <td>${formatTime(booking.start_time)}</td>
+        <td>${formatTime(booking.end_time)}</td>
+    `;
+    table.prepend(row);
+};
+
+// Auto-update every 30 seconds
+setInterval(() => {
+    document.querySelectorAll("#bookingTable tr").forEach(row => {
+        const bookingDate = row.getAttribute("data-date");
+        const startTime = row.getAttribute("data-start");
+        const endTime = row.getAttribute("data-end");
+
+        row.classList.remove("current-meeting", "upcoming-meeting", "past-meeting");
+
+        const status = getMeetingStatus(bookingDate, startTime, endTime);
+        if (status === "current") row.classList.add("current-meeting");
+        else if (status === "upcoming") row.classList.add("upcoming-meeting");
+        else row.classList.add("past-meeting");
+    });
+}, 30000);
+</script>
+</body>
+</html>
